@@ -1,0 +1,153 @@
+---
+title: "Monarch Watch"
+author: "Schwab"
+format: html
+editor: visual
+---
+
+```{r}
+#| include: false
+
+#install.packages("googlesheets4")
+library(googlesheets4)
+library(tidyverse)
+library(janitor)
+library(tidygeocoder)
+library(sf)
+library(leaflet)
+```
+
+
+```{r}
+#| include: false
+install.packages("googlesheets4")
+
+# US and Canada Data
+US_CAN_Recovery_2022 <- read_csv("Monarch Watch 2022 Season Tag Recoveries - Domestic - domestic-recoveries-2022.csv")
+
+
+# Mexico Recovery Data
+Pre_2023_Mexico_Recovery <- read_csv("Monarch Watch Tag Recoveries - Central Mexico - mexico-recoveries.csv")
+
+  
+# If you cannot get acces to the above data run these two lines in the console. Otherwise ignore this message
+ #googlesheets4::gs4_deauth()
+ #googlesheets4::gs4_auth()
+
+# The code below takes both of these dataframes and makes them into a list. 
+
+data_frame_list <- list(US_CAN_Recovery_2022, Pre_2023_Mexico_Recovery)
+```
+
+
+```{r}
+#| include: false
+
+# We need to clean the data we downloaded from google sheets. We can use clean_names() to do this. Since there are two dataframes we can clean them both at once. Use map() to do so. 
+
+# Iterate over your function to clean the names and store the three dataframes as a list. 
+butterfly_dataframes <- map(
+  .x = data_frame_list,
+  .f = clean_names 
+)
+
+# At the moment butterfly_dataframes is unnamed which is inconvient so below I'm naming all the dataframes in the list.  
+
+names(butterfly_dataframes) <-   c( "US_CAN_Recovery_2022", "Pre_2023_Mexico_Recovery")
+```
+
+```{r}
+#| include: false
+ butterfly_location_data <- butterfly_dataframes$US_CAN_Recovery_2022 |>
+   select(tag_code,city_location,state_province,country, date)|>
+   geocode(state = state_province, country = country)
+
+save(butterfly_location_data, file = "butterfly_location_data_city.Rdata")
+ 
+load("butterfly_location_data_city.Rdata")
+
+```
+# An Interactive Map
+
+```{r}
+#| include: false
+Mexico_locations <- butterfly_dataframes$Pre_2023_Mexico_Recovery |>
+  filter(report_season == "2022")|>
+  group_by(location)|>
+  summarize(sightings_count = n()) |>
+  mutate(Mexico = "Mexico") |>
+  # We need to ungroup our data before we geocode it. 
+  ungroup()|>
+  geocode(state = location , country = Mexico)
+
+
+
+```
+
+
+```{r}
+#| include: false
+#If you choose to do this I recommend you save the data then load it as necessary. After saving the data comment the code below. If you want to use the geocoding my state, that's fine too. 
+ #butterfly_location_data_8min <- butterfly_dataframes$US_CAN_Recovery_2022 |>
+    #select(tag_code,city_location,state_province,country, date)|>
+    #geocode(city = city_location, state = state_province, country = country)
+
+#save(butterfly_location_data_8min, file = "butterfly_location_data_8min.Rdata")
+
+# Make sure butterfly_location_data_8min shows in the environment after loading.  
+#load("eight_minute_data.Rdata")
+```
+
+
+
+```{r}
+#| include: false
+Mexico_map <-  maps::map(region = "Mexico", plot = FALSE, fill = TRUE) |> st_as_sf(coords = c("x", "y"), crs = 4326)
+
+ggplot()+
+  geom_sf(data = Mexico_map)
+
+```
+
+This bit of code will bring in the image of a butterfly, so we can make our map pretty
+
+```{r}
+butterfly_icon <- makeIcon(
+  iconUrl = "monarch-butterfly.png",
+  iconWidth = 9.6, iconHeight = 9.6,
+  iconAnchorX = 0, iconAnchorY = 0)
+```
+
+Add two sets for markers one for the individual sightings in `butterfly_location_data` and one for the Mexico locations, use the big icons for the wintering homes
+
+```{r leaflet}
+leaflet() |>
+  addTiles() |>
+  addMarkers(data= butterfly_location_data , 
+             lat = ~lat,
+             lng = ~long,
+             icon = butterfly_icon
+             )|>
+  
+  # Add a popup with the number of butterflies counted for mexico. 
+  addCircleMarkers(data = butterfly_location_data,
+                   popup = ~as.character(butterfly_location_data$city_location),
+                   radius = 6) |>
+  
+  addMarkers(data= Mexico_locations , 
+             lat = ~lat,
+             lng = ~long,
+             icon = butterfly_icon
+             )|>
+  
+  # Add a popup with the number of butterflies counted for mexico. 
+  addCircleMarkers(data = Mexico_locations,
+                   popup = ~as.character(Mexico_locations$location),
+                   radius = 15)
+  
+
+    
+  
+```
+
+This map gives an interesting picture of where this type of citizen science is actually happening. We'll play with leaflet more on Monday.
